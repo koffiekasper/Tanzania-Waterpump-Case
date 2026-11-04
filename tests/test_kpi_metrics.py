@@ -93,3 +93,51 @@ def test_no_nearby_population_returns_empty_table_and_undefined_coverage():
     assert metrics["population_total"] == 0
     assert metrics["population_gaining_access"] == 0
     assert np.isnan(metrics["coverage_before_pct"])
+
+
+def test_budget_selection_counts_fractions_ties_and_ground_truth_independence():
+    from water_wells.kpi_metrics import select_interventions
+
+    candidates = pd.DataFrame({
+        "id": [40, 30, 20, 10, 50],
+        "probability_non_functional": [.2, .8, .8, .95, .1],
+        "actual_status": ["functional"] * 5,
+    }, index=[8, 2, 2, 7, 9])
+    original = candidates.copy(deep=True)
+    assert select_interventions(candidates, budget_n=2).id.tolist() == [10, 20]
+    assert select_interventions(candidates, budget_fraction=.5).id.tolist() == [10, 20]
+    assert select_interventions(candidates, budget_fraction=0).empty
+    assert select_interventions(candidates, budget_n=0).empty
+    assert len(select_interventions(candidates, budget_fraction=1)) == 5
+    assert len(select_interventions(candidates, budget_n=100)) == 5
+    shuffled = candidates.iloc[::-1].copy()
+    shuffled["actual_status"] = "non functional"
+    assert select_interventions(shuffled, budget_n=2).id.tolist() == [10, 20]
+    assert_frame_equal(candidates, original)
+
+
+def test_budget_false_positives_consume_slots_and_baseline_stays_fixed():
+    from water_wells.kpi_metrics import select_interventions
+
+    population, wells = sample_data()
+    # Highest score is a repair-needed well: it consumes a slot but cannot count
+    # as a successful repair under the existing nonfunctional-only scenario.
+    wells["probability_non_functional"] = [.1, .8, .7, .95]
+    baseline = build_population_access_df(population, wells, selected_well_ids=[])
+    one_selected = select_interventions(wells, budget_n=1)
+    assert one_selected.id.tolist() == [104]
+    one = build_population_access_df(population, wells, selected_well_ids=one_selected.id)
+    assert_frame_equal(one, baseline)
+    assert calculate_access_kpis(one)["population_gaining_access"] == 0
+    two_selected = select_interventions(wells, budget_n=2)
+    two = build_population_access_df(population, wells, selected_well_ids=two_selected.id)
+    assert_frame_equal(two[["x", "y", "population"]], baseline[["x", "y", "population"]])
+    np.testing.assert_array_equal(
+        two.distance_to_nearest_functional_well_without_intervention_m,
+        baseline.distance_to_nearest_functional_well_without_intervention_m,
+    )
+    assert calculate_access_kpis(two, access_distance_m=500)["population_gaining_access"] == 20
+    # Selection overrides the original multiclass prediction, including false negatives.
+    selected_false_negative = build_population_access_df(population, wells, selected_well_ids=[703])
+    assert 703 in selected_false_negative.nearest_functional_well_id.to_numpy()
+    assert (two.distance_to_nearest_functional_well_m <= baseline.distance_to_nearest_functional_well_m).all()

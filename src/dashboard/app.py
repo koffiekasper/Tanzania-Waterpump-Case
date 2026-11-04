@@ -103,7 +103,7 @@ def workspace(title="Water access overview"):
         points["distance_m"] = points[distance_column]
         points["distance_km"] = (points["distance_m"] / 1000).round(2)
         distance_scale = np.clip(points["distance_m"].fillna(np.inf).to_numpy() / (threshold_km * 1000), 0, 1)
-        palette = np.array([[33, 102, 172], [247, 247, 247], [230, 126, 34]])
+        palette = np.array([[0, 0, 255], [247, 247, 247], [230, 126, 34]])
         rgb = np.column_stack([
             np.interp(distance_scale, [0, 0.5, 1], palette[:, channel])
             for channel in range(3)

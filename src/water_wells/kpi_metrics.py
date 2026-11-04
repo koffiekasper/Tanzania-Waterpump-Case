@@ -7,13 +7,32 @@ from sklearn.neighbors import BallTree
 EARTH_RADIUS_M = 6_371_000
 
 
+def select_interventions(pred_proba, budget_n=None, budget_fraction=None):
+    """Select the highest nonfunctional probabilities within one budget.
+
+    pred_proba contains id and probability_non_functional. Pass either budget_n
+    or budget_fraction (0 to 1). Fractions use ALL candidate rows and round down;
+    counts larger than the candidate pool select all rows. Ties use ID ascending.
+    Selection never uses actual_status or predicted_status. The returned rows
+    retain their original columns and indices; input predictions are unchanged.
+    """
+    n = budget_n if budget_n is not None else int(len(pred_proba) * budget_fraction)
+    return pred_proba.sort_values(
+        ["probability_non_functional", "id"], ascending=[False, True],
+    ).head(n).copy()
+
+
 def build_population_access_df(population_df, holdout_results_df,
-                               population_crs="EPSG:4326", nearby_radius_m=5_000):
+                               population_crs="EPSG:4326", nearby_radius_m=5_000,
+                               selected_well_ids=None):
     """Return nearby population pixels and functional well IDs/distances.
 
     Filter by distance to ANY holdout well, counting each pixel once. Baseline
     availability uses actual functional wells. Intervention adds actual
-    nonfunctional wells predicted nonfunctional, assumed successfully repaired.
+    nonfunctional wells selected for intervention, assumed successfully repaired.
+    Pass selected_well_ids from select_interventions for a budget-based scenario;
+    without it, use the original predicted_status rule. An empty selection means
+    no repairs. False positives consume selection budget but add no repaired well.
     Other statuses do not qualify. Only supplied holdout wells are considered.
 
     x/y remain in population_crs; distances are spherical straight-line meters
@@ -35,8 +54,10 @@ def build_population_access_df(population_df, holdout_results_df,
     coordinates = coordinates[nearby]
 
     already_functional = holdout_results_df["actual_status"].eq("functional")
-    repaired = (holdout_results_df["actual_status"].eq("non functional")
-                & holdout_results_df["predicted_status"].eq("non functional"))
+    selected = (holdout_results_df["predicted_status"].eq("non functional")
+                if selected_well_ids is None
+                else holdout_results_df["id"].isin(selected_well_ids))
+    repaired = holdout_results_df["actual_status"].eq("non functional") & selected
     scenarios = [
         (already_functional | repaired,
          "nearest_functional_well_id", "distance_to_nearest_functional_well_m"),

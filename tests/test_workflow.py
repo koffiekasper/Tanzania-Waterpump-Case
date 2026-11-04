@@ -381,3 +381,74 @@ def test_split_without_holdout_preserves_original_split(wells, target, config):
     pd.testing.assert_series_equal(y_valid, expected[3])
     assert_frame_equal(X_holdout, wells.iloc[:0])
     pd.testing.assert_series_equal(y_holdout, target.iloc[:0])
+
+
+def test_dashboard_population_csv_cache_reuses_region_assignment(population_raster, tmp_path, monkeypatch):
+    import geopandas as gpd
+    from shapely.geometry import box
+    from dashboard.cache_data import prepare_population
+
+    boundaries = tmp_path / "regions.geojson"
+    gpd.GeoDataFrame({"shapeName": ["Morogoro"]}, geometry=[box(34, -7, 36, -5)],
+                     crs="EPSG:4326").to_file(boundaries, driver="GeoJSON")
+    output = tmp_path / "dashboard"
+    original = prepare_population(population_raster, boundaries, output)
+    assert len(original) == 8  # Raster NoData pixel is excluded.
+    assert original.pixel_id.is_unique
+    assert original.region.eq("Morogoro").all()
+    assert original.population.sum() == 255
+
+    def no_read(*args, **kwargs):
+        raise AssertionError("Cache hit should not read/assign boundaries again")
+
+    monkeypatch.setattr(gpd, "read_file", no_read)
+    loaded = prepare_population(population_raster, boundaries, output)
+    assert not list(output.rglob("*.json"))
+    assert_frame_equal(original, loaded, check_exact=False)
+    assert (output / "shared/boundaries.csv").exists()
+
+
+def test_dashboard_region_csvs_are_out_of_region_and_cacheable(wells, target, config,
+                                                               population_raster, tmp_path, monkeypatch):
+    from sklearn.neighbors import BallTree
+    from dashboard.cache_data import prepare_region, REGION_FILES
+
+    X = wells.copy()
+    X["region"] = "Tanga"
+    X.loc[X.index[:9], "region"] = "Morogoro"
+    population = pd.DataFrame({
+        "pixel_id": [10, 20, 30, 40], "x": [35., 35.01, 35.5, 35.],
+        "y": [-6., -6.01, -6.5, -6.015], "longitude": [35., 35.01, 35.5, 35.],
+        "latitude": [-6., -6.01, -6.5, -6.015], "population": [10., 20., 500., 40.],
+        "region": ["Morogoro", "Morogoro", "Morogoro", "Tanga"],
+        "within_tanzania": [True] * 4,
+    })
+    tree = BallTree(np.radians(population[["latitude", "longitude"]]), metric="haversine")
+    output = tmp_path / "dashboard"
+    arguments = ("Morogoro", X, target, population, tree, population_raster,
+                 output, config, 2500., "EPSG:4326")
+    prepare_region(*arguments)
+    directory = output / "regions/morogoro"
+    assert all((directory / name).exists() for name in REGION_FILES)
+    predictions = pd.read_csv(directory / "predictions.csv")
+    assert set(predictions.id) == set(X.iloc[:9].id)
+    assert predictions.region.eq("Morogoro").all()
+    expected_labels = X[["id"]].assign(actual_status=target).set_index("id")
+    assert predictions.set_index("id").actual_status.equals(
+        expected_labels.loc[predictions.id, "actual_status"],
+    )
+    np.testing.assert_allclose(predictions.filter(like="probability_").sum(axis=1), 1, atol=1e-6)
+    splits = pd.read_csv(directory / "splits.csv")
+    assert not set(splits.loc[splits.split != "geographic_holdout", "id"]) & set(predictions.id)
+    baseline = pd.read_csv(directory / "baseline_access.csv")
+    assert set(baseline.pixel_id) == {10, 20, 30, 40}  # Full region + nearby border pixel.
+    assert not baseline.loc[baseline.pixel_id.eq(30), "within_candidate_radius"].iloc[0]
+    assert baseline.loc[baseline.pixel_id.eq(30), "within_region"].iloc[0]
+    assert "distance_to_nearest_functional_well_m" not in baseline  # No frozen repair outcome.
+    assert not list(directory.glob("*.json"))
+
+    def no_fit(*args, **kwargs):
+        raise AssertionError("Completed region CSVs should not retrain the model")
+
+    monkeypatch.setattr(TrainingPipeline, "fit", no_fit)
+    prepare_region(*arguments)

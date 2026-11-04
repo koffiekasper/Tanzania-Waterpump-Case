@@ -1,6 +1,7 @@
 """Evaluation independent of training and reusable across experiments."""
 import pandas as pd
 import matplotlib.pyplot as plt
+from sklearn.dummy import DummyClassifier
 from sklearn.metrics import (accuracy_score, precision_recall_fscore_support,
                              classification_report, confusion_matrix,
                              ConfusionMatrixDisplay)
@@ -8,6 +9,19 @@ from .data_loader import TARGET_CLASSES
 
 
 class ModelEvaluator:
+    def baseline_predictions(self, X_train, y_train, X_valid,
+                             strategy="stratified", random_state=42):
+        """Predict validation labels using training class frequencies only.
+
+        stratified draws random labels; uniform guesses equally across classes;
+        most_frequent always predicts the most common training label.
+        No feature engineering or model pipeline fitting is performed.
+        """
+        baseline = DummyClassifier(strategy=strategy, random_state=random_state)
+        baseline.fit(X_train, y_train)
+        return pd.Series(baseline.predict(X_valid), index=X_valid.index,
+                         name="baseline_prediction")
+
     def metrics(self, y_true, y_pred, average="weighted"):
         if average in ("weighted", "macro"):
             report = self.classification_report(y_true, y_pred, output_dict=True)

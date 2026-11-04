@@ -9,7 +9,7 @@ import rasterio
 from rasterio.warp import transform
 from sklearn.neighbors import BallTree
 
-from water_wells import DataConfig, DataLoader, TrainingConfig, TrainingPipeline
+from water_wells import DataConfig, DataLoader, ModelEvaluator, TrainingConfig, TrainingPipeline
 from water_wells.kpi_metrics import (
     EARTH_RADIUS_M, assign_population_regions, build_population_access_df,
 )
@@ -102,10 +102,7 @@ def prepare_region(region, X, y, population, population_tree, raster_path,
 
     baseline = baseline.drop(columns=["nearest_functional_well_id",
                                        "distance_to_nearest_functional_well_m"])
-    importance = pd.DataFrame({
-        "feature": pipeline.preprocessor.get_feature_names_out(),
-        "importance": pipeline.classifier.feature_importances_,
-    }).sort_values("importance", ascending=False)
+    importance = ModelEvaluator().feature_importance(pipeline)
     for name, frame in zip(REGION_FILES, [predictions, validation, splits, baseline, importance]):
         write_csv(frame, directory / name)
     print(f"{region}: saved {len(predictions):,} candidates and {len(baseline):,} population pixels", flush=True)

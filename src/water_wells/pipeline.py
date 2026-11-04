@@ -5,11 +5,13 @@ import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import LabelEncoder
+from xgboost import XGBClassifier
 from sklearn.utils.validation import check_is_fitted
 from .config import TrainingConfig
 from .feature_engineering import FeatureEngineer
 from .preprocessing import DataPreprocessor
-from .modeling import WaterWellClassifier
+from .data_loader import TARGET_CLASSES
 from .population_features import PopulationFeatures
 
 
@@ -52,17 +54,24 @@ class TrainingPipeline(ClassifierMixin, BaseEstimator):
 
     def fit(self, X, y):
         """Fit exactly the supplied rows; use split() first for validation."""
+        if set(y) != set(TARGET_CLASSES):
+            raise ValueError(f"Training requires all three status labels: {TARGET_CLASSES}")
         config = self.config or TrainingConfig()
+        self.label_encoder_ = LabelEncoder().fit(y)
+        params = TrainingConfig().xgb_params.copy()
+        params.update(config.xgb_params)
+        params.setdefault("random_state", config.random_seed)
+        params.update(objective="multi:softprob", num_class=3)
         self.pipeline_ = Pipeline([
             ("features", FeatureEngineer(
                 population_raster=self.population_raster,
                 cache_dir=self.cache_dir, data_mode=self.data_mode,
             )),
             ("preprocessing", DataPreprocessor(config.min_frequency, config.max_categories)),
-            ("classifier", WaterWellClassifier(config.xgb_params, config.random_seed)),
+            ("classifier", XGBClassifier(**params)),
         ])
-        self.pipeline_.fit(X, y)
-        self.classes_ = self.classifier.classes_
+        self.pipeline_.fit(X, self.label_encoder_.transform(y))
+        self.classes_ = self.label_encoder_.classes_
         return self
 
     @property
@@ -77,7 +86,7 @@ class TrainingPipeline(ClassifierMixin, BaseEstimator):
 
     def predict(self, X):
         check_is_fitted(self, "pipeline_")
-        return self.pipeline_.predict(X)
+        return self.label_encoder_.inverse_transform(self.pipeline_.predict(X).astype(int))
 
     def predict_proba(self, X):
         """Return probabilities with readable class names, in input row order."""

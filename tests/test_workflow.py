@@ -285,3 +285,30 @@ def test_evaluator_summary_preserves_sklearn_metrics(average):
     assert result["accuracy"] == accuracy_score(actual, predicted)
     for name, value in zip(("precision", "recall", "f1"), expected[:3]):
         np.testing.assert_allclose(result[name], value)
+
+
+def test_pipeline_owns_target_encoding_and_xgboost(wells, target, config):
+    from xgboost import XGBClassifier
+
+    pipeline = TrainingPipeline(config).fit(wells, target)
+    assert isinstance(pipeline.classifier, XGBClassifier)
+    assert pipeline.classes_.tolist() == list(TARGET_CLASSES)
+    encoded = pipeline.pipeline_.predict(wells)
+    assert set(encoded).issubset({0, 1, 2})
+    np.testing.assert_array_equal(
+        pipeline.predict(wells), pipeline.label_encoder_.inverse_transform(encoded.astype(int)),
+    )
+    probabilities = pipeline.predict_proba(wells)
+    np.testing.assert_allclose(probabilities.to_numpy(), pipeline.classifier.predict_proba(
+        pipeline.pipeline_[:-1].transform(wells),
+    ))
+    assert probabilities.columns.tolist() == list(TARGET_CLASSES)
+    # Partial overrides retain the model defaults and configured seed.
+    params = pipeline.classifier.get_params()
+    assert params["n_estimators"] == 3
+    assert params["learning_rate"] == 0.05
+    assert params["random_state"] == config.random_seed
+    assert params["objective"] == "multi:softprob"
+    for labels in [target.iloc[:2], target.replace(TARGET_CLASSES[2], "unknown")]:
+        with pytest.raises(ValueError, match="all three status labels"):
+            TrainingPipeline(config).fit(wells.loc[labels.index], labels)

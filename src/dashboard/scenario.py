@@ -3,7 +3,7 @@ from water_wells.kpi_metrics import (
 )
 
 
-def compare_strategies(population, predictions, n_repairs):
+def compare_strategies(population, predictions, n_repairs, access_distance_m=2500):
     working_wells = predictions.loc[
         predictions["actual_status"].eq("functional"), ["id", "latitude", "longitude"],
     ]
@@ -11,7 +11,7 @@ def compare_strategies(population, predictions, n_repairs):
     population = population.assign(x=population["longitude"], y=population["latitude"])
     selected = select_access_interventions(
         population.loc[population["within_region"]], candidates, working_wells,
-        budget_n=n_repairs, access_distance_m=2500,
+        budget_n=n_repairs, access_distance_m=access_distance_m,
     )
     random_selected = select_interventions(
         predictions, budget_n=len(selected), strategy="random", random_state=42,

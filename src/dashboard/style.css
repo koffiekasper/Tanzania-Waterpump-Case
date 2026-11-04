@@ -15,6 +15,14 @@ h1 {font-size: 2rem !important; font-weight: 650 !important; letter-spacing: -.0
 .st-key-intro [data-testid="stMarkdownContainer"] p {color: #71808a; font-size: .94rem;}
 .st-key-map_panel, .st-key-kpi_panel, .st-key-controls_panel {border: 1px solid #e1e7eb; border-radius: 16px;
     background: #fff; min-height: calc(100vh - 245px); overflow: hidden;}
+.st-key-map_header, .st-key-kpi_header {padding: .75rem 1rem; border-bottom: 1px solid #edf0f2;}
+.panel-title {display: flex; align-items: center; gap: .55rem; font-size: .9rem; font-weight: 600; color: #334c59;}
+.st-key-map_header button, .st-key-kpi_header button {font-size: .7rem; color: #71818b; padding: .25rem;}
+.st-key-map_rail, .st-key-kpi_rail {background: #fff; border: 1px solid #e1e7eb; border-radius: 12px;
+    min-height: calc(100vh - 245px); padding: .4rem .2rem; align-items: center;}
+.rail-label {writing-mode: vertical-rl; margin: 1rem auto; font-size: .8rem; color: #71818b; letter-spacing: .04em;}
+[data-testid="stColumn"]:has(.st-key-map_rail), [data-testid="stColumn"]:has(.st-key-kpi_rail) {
+    min-width: 48px !important; max-width: 56px;}
 .panel-heading {display: flex; align-items: center; gap: .55rem; padding: 1.2rem 1.25rem;
     border-bottom: 1px solid #edf0f2; font-size: .9rem; font-weight: 600; color: #334c59;}
 .section-dot {height: 7px; width: 7px; background: #128a94; border-radius: 50%;}
@@ -35,12 +43,22 @@ h1 {font-size: 2rem !important; font-weight: 650 !important; letter-spacing: -.0
 .st-key-controls_panel hr {margin: .5rem 0; border-color: #edf0f2;}
 .controls-note {border-top: 1px solid #edf0f2; padding-top: 1.25rem; margin-top: 1.3rem;
     font-size: .73rem; line-height: 1.8; color: #91a0a8;}
+.st-key-kpi_content {padding: .6rem 1.1rem 1.25rem;}
+.st-key-kpi_content [data-testid="stMetricValue"] {font-size: 1.8rem;}
+.st-key-kpi_content table {font-size: .75rem;}
 .st-key-map_settings {padding: .5rem 1.25rem 0;}
 .map-legend {padding: .7rem 1.25rem 1rem; color: #687d88; font-size: .7rem;}
+.threshold-legend {display: flex; flex-wrap: wrap; gap: 1.25rem; margin-top: .7rem;}
+.threshold-legend span {display: flex; align-items: center; gap: .4rem;}
+.threshold-legend i {display: inline-block; width: 12px; height: 12px; border-radius: 2px;}
 .distance-gradient {height: 7px; border-radius: 4px; margin: .65rem 0 .35rem;
-    background: linear-gradient(to right, #2166ac, #f7f7f7, #e67e22); border: 1px solid #e1e7eb;}
+    background: linear-gradient(to right, #4e708b 0%, #4e708b 25%, #ff0000 100%); border: 1px solid #e1e7eb;}
 .opacity-note {margin: .75rem 0 0; font-size: .65rem; line-height: 1.6; color: #819099;}
-.distance-labels {display: flex; justify-content: space-between; font-size: .65rem;}
+.distance-labels {position: relative; height: 1rem; font-size: .65rem;}
+.distance-labels span {position: absolute;}
+.distance-labels span:first-child {left: 0;}
+.distance-labels span:nth-child(2) {left: 25%; transform: translateX(-50%);}
+.distance-labels span:last-child {right: 0;}
 @media (max-width: 850px) {
     [data-testid="stMainBlockContainer"] {padding-left: 1rem; padding-right: 1rem;}
     .st-key-topbar {margin-left: -1rem; margin-right: -1rem; width: calc(100% + 2rem);}

@@ -14,7 +14,6 @@ class ModelEvaluator:
             summary = report[f"{average} avg"]
             precision, recall, f1 = (summary[key] for key in ("precision", "recall", "f1-score"))
         else:
-            # Preserve sklearn's other averaging options (including per-class arrays).
             precision, recall, f1, _ = precision_recall_fscore_support(
                 y_true, y_pred, labels=TARGET_CLASSES, average=average, zero_division=0)
         return {"accuracy": accuracy_score(y_true, y_pred), "precision": precision,

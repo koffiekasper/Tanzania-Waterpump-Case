@@ -5,7 +5,6 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
-from sklearn.utils.validation import check_is_fitted
 
 
 class UnknownImputer(TransformerMixin, BaseEstimator):
@@ -19,12 +18,10 @@ class UnknownImputer(TransformerMixin, BaseEstimator):
         return self
 
     def transform(self, X):
-        check_is_fitted(self, "feature_names_in_")
         data = X.copy().astype(object).where(X.notna(), "Unknown")
         return data.astype(str) if self.stringify else data
 
     def get_feature_names_out(self, input_features=None):
-        check_is_fitted(self, "feature_names_in_")
         return self.feature_names_in_ if input_features is None else np.asarray(input_features)
 
 
@@ -66,9 +63,7 @@ class DataPreprocessor(TransformerMixin, BaseEstimator):
         return self
 
     def transform(self, X):
-        check_is_fitted(self, "column_transformer_")
         return self.column_transformer_.transform(X)
 
     def get_feature_names_out(self, input_features=None):
-        check_is_fitted(self, "column_transformer_")
         return self.column_transformer_.get_feature_names_out(input_features)

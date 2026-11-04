@@ -40,10 +40,6 @@ class PopulationFeatures:
         return Path(self.cache_dir) / f"{key}.joblib"
 
     def add_features(self, X):
-        if self.data_mode not in {"auto", "load", "write", "off"}:
-            raise ValueError("data_mode must be auto, load, write, or off")
-        if self.chunk_size < 1:
-            raise ValueError("chunk_size must be positive")
         coordinates = X[["longitude", "latitude"]]
         valid = (coordinates.longitude.between(-180, 180)
                  & coordinates.latitude.between(-90, 90)).to_numpy()
@@ -57,8 +53,8 @@ class PopulationFeatures:
             if path.exists():
                 cache = joblib.load(path)
         missing = unique if self.data_mode in {"write", "off"} else unique.difference(cache.index)
-        if len(missing) and self.data_mode == "load":
-            raise ValueError(f"Population cache missing {len(missing)} coordinates; use data_mode='auto' or 'write'.")
+        if self.data_mode == "load":
+            cache = cache.loc[unique]
         if len(missing):
             computed = self._compute(missing)
             cache = pd.concat([cache.loc[~cache.index.isin(missing)], computed])

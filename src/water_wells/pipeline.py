@@ -44,11 +44,22 @@ class TrainingPipeline(ClassifierMixin, BaseEstimator):
             data.to_csv(path, index=False)
         return data
 
-    def split(self, X, y):
-        """Split raw rows before any learned transformation (stratified)."""
+    def split(self, X, y, holdout_regions=None):
+        """Reserve whole regions, then stratify the remaining raw rows.
+
+        validation_fraction applies to the non-holdout rows. Without selected
+        regions the holdout is empty. No feature transformations are fitted here.
+        Returns X_train, X_valid, X_holdout, y_train, y_valid, y_holdout.
+        """
         config = self.config or TrainingConfig()
-        return train_test_split(X, y, test_size=config.validation_fraction,
-                                random_state=config.random_seed, stratify=y)
+        holdout = X["region"].isin([] if holdout_regions is None else holdout_regions).to_numpy()
+        X_holdout, y_holdout = X.iloc[holdout].copy(), y.iloc[holdout].copy()
+        X_train, X_valid, y_train, y_valid = train_test_split(
+            X.iloc[~holdout], y.iloc[~holdout],
+            test_size=config.validation_fraction,
+            random_state=config.random_seed, stratify=y.iloc[~holdout],
+        )
+        return X_train, X_valid, X_holdout, y_train, y_valid, y_holdout
 
     def fit(self, X, y):
         """Fit exactly the supplied rows; use split() first for validation."""

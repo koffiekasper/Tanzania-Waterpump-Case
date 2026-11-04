@@ -8,7 +8,6 @@ class DataConfig:
     data_dir: Path = Path(".")
     train_file: str = "4910797b-ee55-40a7-8668-10efd5c1b960.csv"
     labels_file: str = "0bf8bc6e-30d0-4c50-956a-603fc693d966.csv"
-    test_file: str | None = None
 
 
 @dataclass

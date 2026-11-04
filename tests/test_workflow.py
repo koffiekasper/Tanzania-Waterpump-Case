@@ -8,7 +8,7 @@ from sklearn.model_selection import StratifiedKFold, cross_val_score
 
 from water_wells import (
     DataConfig, DataLoader, DataPreprocessor, FeatureEngineer,
-    ModelEvaluator, TrainingConfig, TrainingPipeline, WaterWellClassifier,
+    ModelEvaluator, TrainingConfig, TrainingPipeline,
 )
 from water_wells.data_loader import RAW_COLUMNS, TARGET_CLASSES
 from water_wells.preprocessing import UnknownImputer
@@ -124,10 +124,6 @@ def test_predictions_serialization_and_duplicate_indices(wells, target, config, 
     assert_frame_equal(original, new)
     # Batch composition cannot change geographic features or predictions.
     assert_frame_equal(loaded.predict_wells(new.iloc[[0]]), results.iloc[[0]])
-    classifier_path = tmp_path / "classifier.joblib"
-    pipeline.classifier.save(classifier_path)
-    restored = WaterWellClassifier.load(classifier_path)
-    assert restored.classes_.tolist() == list(TARGET_CLASSES)
     assert len(ModelEvaluator().feature_importance(pipeline)) == len(
         pipeline.preprocessor.get_feature_names_out())
 
@@ -157,8 +153,7 @@ def test_loader_aligns_labels_and_validates(wells, target, tmp_path):
     assert y.tolist() == target.tolist()
     with pytest.raises(ValueError, match="Missing required"):
         loader.validate_features(wells.drop(columns="latitude"))
-    with pytest.raises(ValueError, match="test CSV"):
-        loader.load_test()
+    assert_frame_equal(loader.load_features("values.csv"), X)
     labels.iloc[:1].to_csv(tmp_path / "labels.csv", index=False)
     with pytest.raises(ValueError, match="Missing or unrecognized"):
         loader.load_training()
@@ -186,7 +181,7 @@ def test_population_sums_cache_and_coordinate_changes(population_raster, tmp_pat
     original = data.copy(deep=True)
     cache = tmp_path / "cache"
     processor = PopulationFeatures(population_raster, cache, "auto", chunk_size=1)
-    result = processor.fit_transform(data)
+    result = processor.add_features(data)
     columns = list(POPULATION_COLUMNS.values())
     assert_frame_equal(data, original)
     assert result.index.equals(data.index)
@@ -196,15 +191,15 @@ def test_population_sums_cache_and_coordinate_changes(population_raster, tmp_pat
     assert result.iloc[2][columns].isna().all()
     assert (np.diff(result.iloc[0][columns].to_numpy(dtype=float)) >= 0).all()
     assert len(list(cache.glob("*.joblib"))) == 1
-    refreshed = PopulationFeatures(population_raster, cache, "write").transform(data)
+    refreshed = PopulationFeatures(population_raster, cache, "write").add_features(data)
     assert_frame_equal(refreshed, result)
     uncached_dir = tmp_path / "no-cache"
-    uncached = PopulationFeatures(population_raster, uncached_dir, "off").transform(data)
+    uncached = PopulationFeatures(population_raster, uncached_dir, "off").add_features(data)
     assert_frame_equal(uncached, result)
     assert not uncached_dir.exists()
     outside = data.iloc[[0]].copy()
     outside["longitude"] = 40.0
-    outside_result = PopulationFeatures(population_raster, cache).transform(outside)
+    outside_result = PopulationFeatures(population_raster, cache).add_features(outside)
     assert (outside_result[columns] == 0).all().all()
 
     def no_compute(*args):
@@ -212,18 +207,18 @@ def test_population_sums_cache_and_coordinate_changes(population_raster, tmp_pat
 
     monkeypatch.setattr(PopulationFeatures, "_compute", no_compute)
     reordered = data.iloc[[1, 0]]
-    loaded = PopulationFeatures(population_raster, cache, "load").fit_transform(reordered)
+    loaded = PopulationFeatures(population_raster, cache, "load").add_features(reordered)
     assert_frame_equal(loaded, result.iloc[[1, 0]])
     changed = data.iloc[[0]].copy()
     changed["longitude"] += 0.01
     with pytest.raises(ValueError, match="cache missing"):
-        PopulationFeatures(population_raster, cache, "load").transform(changed)
+        PopulationFeatures(population_raster, cache, "load").add_features(changed)
     # A changed raster cannot silently reuse old features.
     import os
     stat = population_raster.stat()
     os.utime(population_raster, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1000000))
     with pytest.raises(ValueError, match="cache missing"):
-        PopulationFeatures(population_raster, cache, "load").transform(data)
+        PopulationFeatures(population_raster, cache, "load").add_features(data)
 
 
 def test_population_pipeline_cache_export_and_reload(wells, target, config,
@@ -232,7 +227,7 @@ def test_population_pipeline_cache_export_and_reload(wells, target, config,
     cache = tmp_path / "cache"
     pipeline = TrainingPipeline(config, population_raster, cache, "auto")
     output = tmp_path / "processed.csv"
-    prepared = pipeline.prepare_data(wells, output_path=output)
+    prepared = pipeline.prepare_population_data(wells, output_path=output)
     saved = pd.read_csv(output)
     assert saved.id.tolist() == wells.id.tolist()
     assert all(column in saved for column in POPULATION_COLUMNS.values())
@@ -274,3 +269,19 @@ def test_feature_engineer_population_in_standard_cycle(wells, population_raster,
     assert all(column in result for column in POPULATION_COLUMNS.values())
     assert "well_age" in result and "nearby_wells_3km" in result
     assert_frame_equal(engineer.transform(wells.iloc[[5]]), result.iloc[[5]])
+
+
+@pytest.mark.parametrize("average", ["weighted", "macro", "micro", None])
+def test_evaluator_summary_preserves_sklearn_metrics(average):
+    from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+
+    # Include an absent true class and a predicted-only class.
+    actual = [TARGET_CLASSES[0], TARGET_CLASSES[0], TARGET_CLASSES[2]]
+    predicted = [TARGET_CLASSES[0], TARGET_CLASSES[1], TARGET_CLASSES[0]]
+    expected = precision_recall_fscore_support(
+        actual, predicted, labels=TARGET_CLASSES, average=average, zero_division=0,
+    )
+    result = ModelEvaluator().metrics(actual, predicted, average=average)
+    assert result["accuracy"] == accuracy_score(actual, predicted)
+    for name, value in zip(("precision", "recall", "f1"), expected[:3]):
+        np.testing.assert_allclose(result[name], value)

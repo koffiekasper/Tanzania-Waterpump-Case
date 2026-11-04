@@ -1,7 +1,4 @@
 """XGBoost with readable target labels and probability columns."""
-from pathlib import Path
-import joblib
-import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.preprocessing import LabelEncoder
 from sklearn.utils.validation import check_is_fitted
@@ -37,23 +34,7 @@ class WaterWellClassifier(ClassifierMixin, BaseEstimator):
         check_is_fitted(self, "model_")
         return self.model_.predict_proba(X)
 
-    def probability_frame(self, X, index=None):
-        return pd.DataFrame(self.predict_proba(X), columns=self.classes_, index=index)
-
     @property
     def feature_importances_(self):
         check_is_fitted(self, "model_")
         return self.model_.feature_importances_
-
-    def save(self, path: str | Path):
-        check_is_fitted(self, "model_")
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump(self, path)
-
-    @classmethod
-    def load(cls, path: str | Path):
-        """Load only trusted artifacts: joblib can execute arbitrary code."""
-        artifact = joblib.load(path)
-        if not isinstance(artifact, cls):
-            raise TypeError("Artifact is not a WaterWellClassifier")
-        return artifact

@@ -22,28 +22,11 @@ class FeatureEngineer(TransformerMixin, BaseEstimator):
         self.cache_dir = cache_dir
         self.data_mode = data_mode
 
-    def prepare_population(self, X):
-        """Enrich/cache external population sums without fitting well references.
-
-        Safe to call before splitting: this step learns nothing from well labels
-        or neighboring training rows. All other features are built in transform.
-        """
-        if getattr(self, "population_raster", None) is None:
-            return X.copy()
-        return PopulationFeatures(
-            self.population_raster, self.cache_dir, self.data_mode,
-        ).fit_transform(X)
-
-    @staticmethod
-    def _valid(data):
-        return (data["latitude"].between(-90, 90)
-                & data["longitude"].between(-180, 180)).to_numpy()
-
     def fit(self, X: pd.DataFrame, y=None):
         DataLoader.validate_features(X)
         if X["id"].isna().any() or X["id"].duplicated().any():
             raise ValueError("Training reference IDs must be present and unique")
-        valid = self._valid(X)
+        valid = (X["latitude"].between(-90, 90) & X["longitude"].between(-180, 180)).to_numpy()
         self.reference_ = X.loc[valid, ["id", "latitude", "longitude"]].copy()
         self.tree_ = (BallTree(np.radians(self.reference_[["latitude", "longitude"]]),
                                metric="haversine") if valid.any() else None)
@@ -53,8 +36,12 @@ class FeatureEngineer(TransformerMixin, BaseEstimator):
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         check_is_fitted(self, "reference_")
         DataLoader.validate_features(X)
-        data = self.prepare_population(X)
-        valid = self._valid(data)
+        data = X.copy()
+        if getattr(self, "population_raster", None) is not None:
+            data = PopulationFeatures(
+                self.population_raster, self.cache_dir, self.data_mode,
+            ).add_features(data)
+        valid = (data["latitude"].between(-90, 90) & data["longitude"].between(-180, 180)).to_numpy()
         # Exclude a reference well only when ID and coordinates match. This
         # keeps single-row and batch inference identical and avoids subtracting
         # a fictitious self from unseen wells.

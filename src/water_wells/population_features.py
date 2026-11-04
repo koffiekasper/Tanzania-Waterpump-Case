@@ -7,7 +7,6 @@ import tempfile
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator, TransformerMixin
 
 POPULATION_COLUMNS = {
     1: "Population_1km", 2: "Population_2km", 3: "Population_3km",
@@ -16,7 +15,7 @@ POPULATION_COLUMNS = {
 METRIC_CRS = "+proj=aeqd +lat_0=-6 +lon_0=35 +datum=WGS84 +units=m +no_defs"
 
 
-class PopulationFeatures(TransformerMixin, BaseEstimator):
+class PopulationFeatures:
     """Enrich raw wells, preserving population, order, index and other columns.
 
     auto: reuse cached coordinates and write missing ones; load: require cache;
@@ -33,9 +32,6 @@ class PopulationFeatures(TransformerMixin, BaseEstimator):
         self.data_mode = data_mode
         self.chunk_size = chunk_size
 
-    def fit(self, X, y=None):
-        return self
-
     def _cache_path(self):
         path = Path(self.raster_path).resolve()
         stat = path.stat()
@@ -43,7 +39,7 @@ class PopulationFeatures(TransformerMixin, BaseEstimator):
         key = hashlib.sha256(signature.encode()).hexdigest()
         return Path(self.cache_dir) / f"{key}.joblib"
 
-    def transform(self, X):
+    def add_features(self, X):
         if self.data_mode not in {"auto", "load", "write", "off"}:
             raise ValueError("data_mode must be auto, load, write, or off")
         if self.chunk_size < 1:

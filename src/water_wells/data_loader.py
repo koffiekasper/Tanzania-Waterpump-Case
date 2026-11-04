@@ -52,9 +52,3 @@ class DataLoader:
             raise ValueError("Missing or unrecognized training labels")
         target.index = features.index
         return features, target
-
-    def load_test(self, path: str | Path | None = None) -> pd.DataFrame:
-        path = path or self.config.test_file
-        if path is None:
-            raise ValueError("Provide a test CSV path or configure test_file")
-        return self.load_features(path)

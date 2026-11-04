@@ -139,7 +139,7 @@ def test_predictions_serialization_and_duplicate_indices(wells, target, config, 
 
 def test_split_and_sklearn_cross_validation(wells, target, config):
     pipeline = clone(TrainingPipeline(config))
-    X_train, X_valid, y_train, y_valid = pipeline.split(wells, target)
+    X_train, X_valid, X_holdout, y_train, y_valid, y_holdout = pipeline.split(wells, target)
     pipeline.fit(X_train, y_train)
     reference = pipeline.pipeline_.named_steps["features"].reference_
     assert set(reference["id"]).isdisjoint(X_valid["id"])
@@ -242,7 +242,7 @@ def test_population_pipeline_cache_export_and_reload(wells, target, config,
 
     monkeypatch.setattr(PopulationFeatures, "_compute", no_compute)
     pipeline = clone(TrainingPipeline(config, population_raster, cache, "load"))
-    X_train, X_valid, y_train, y_valid = pipeline.split(wells, target)
+    X_train, X_valid, X_holdout, y_train, y_valid, y_holdout = pipeline.split(wells, target)
     pipeline.fit(X_train, y_train)
     assert list(pipeline.pipeline_.named_steps) == ["features", "preprocessing", "classifier"]
     engineer = pipeline.pipeline_.named_steps["features"]
@@ -337,3 +337,47 @@ def test_evaluator_baseline_predictions_match_dummy_classifier(strategy):
     ))
     if strategy == "most_frequent":
         assert actual.eq(TARGET_CLASSES[0]).all()
+
+
+@pytest.mark.parametrize("holdout_regions", [["Morogoro"], ["Morogoro", "Tanga"]])
+def test_geographic_split_is_disjoint_aligned_and_train_only(wells, target, config, holdout_regions):
+    data = wells.copy()
+    data.loc[data.index[:9], "region"] = "Morogoro"
+    data.loc[data.index[9:15], "region"] = "Tanga"
+    original = data.copy(deep=True)
+    pipeline = TrainingPipeline(config)
+    X_train, X_valid, X_holdout, y_train, y_valid, y_holdout = pipeline.split(data, target, holdout_regions=holdout_regions)
+    expected = data.region.isin(holdout_regions)
+    assert_frame_equal(X_holdout, data.loc[expected])
+    pd.testing.assert_series_equal(y_holdout, target.loc[expected])
+    partitions = [X_train, X_valid, X_holdout]
+    ids = [set(frame.id) for frame in partitions]
+    assert ids[0].isdisjoint(ids[1])
+    assert ids[0].isdisjoint(ids[2]) and ids[1].isdisjoint(ids[2])
+    assert set.union(*ids) == set(data.id)
+    assert sum(map(len, partitions)) == len(data)
+    assert len(X_valid) == int(np.ceil((~expected).sum() * config.validation_fraction))
+    for frame, labels in [(X_train, y_train),
+                          (X_valid, y_valid),
+                          (X_holdout, y_holdout)]:
+        pd.testing.assert_series_equal(labels, target.loc[frame.index])
+    pipeline.fit(X_train, y_train)
+    reference_ids = set(pipeline.pipeline_.named_steps['features'].reference_.id)
+    assert reference_ids == ids[0]
+    assert pipeline.predict_wells(X_holdout).index.equals(X_holdout.index)
+    repeat_X_train, *_ = pipeline.split(data, target, holdout_regions=holdout_regions)
+    assert_frame_equal(repeat_X_train, X_train)
+    assert_frame_equal(data, original)
+
+
+def test_split_without_holdout_preserves_original_split(wells, target, config):
+    from sklearn.model_selection import train_test_split
+    expected = train_test_split(wells, target, test_size=config.validation_fraction,
+                                random_state=config.random_seed, stratify=target)
+    X_train, X_valid, X_holdout, y_train, y_valid, y_holdout = TrainingPipeline(config).split(wells, target)
+    assert_frame_equal(X_train, expected[0])
+    assert_frame_equal(X_valid, expected[1])
+    pd.testing.assert_series_equal(y_train, expected[2])
+    pd.testing.assert_series_equal(y_valid, expected[3])
+    assert_frame_equal(X_holdout, wells.iloc[:0])
+    pd.testing.assert_series_equal(y_holdout, target.iloc[:0])

@@ -12,7 +12,7 @@ def test_full_training(tmp_path):
     root = Path(__file__).resolve().parents[1]
     X, y = DataLoader(DataConfig(data_dir=root)).load_training()
     pipeline = TrainingPipeline()
-    X_train, X_valid, y_train, y_valid = pipeline.split(X, y)
+    X_train, X_valid, X_holdout, y_train, y_valid, y_holdout = pipeline.split(X, y)
     pipeline.fit(X_train, y_train)
     metrics = ModelEvaluator().metrics(y_valid, pipeline.predict(X_valid))
     metrics["encoded_features"] = len(pipeline.preprocessor.get_feature_names_out())

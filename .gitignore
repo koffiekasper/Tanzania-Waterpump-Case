@@ -1,0 +1,85 @@
+# Python environments
+.venv/
+venv/
+env/
+ENV/
+# This project also has a virtual environment directly in the repository root.
+/bin/
+/include/
+/lib/
+/lib64/
+/etc/
+/share/
+/Scripts/
+/pyvenv.cfg
+
+# Python bytecode, packaging, and build outputs
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+/build/
+/dist/
+
+# Test, lint, type-check, and coverage caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Notebook checkpoints (keep the actual .ipynb notebooks)
+.ipynb_checkpoints/
+
+# Local source datasets and generated data
+/*.csv
+*.tif
+*.tiff
+*.tif.aux.xml
+*.tiff.aux.xml
+*.ovr
+/data/raw/*
+!/data/raw/.gitkeep
+/data/processed/*
+!/data/processed/.gitkeep
+
+# Trained models and serialized caches
+/models/*
+!/models/.gitkeep
+*.joblib
+*.pkl
+*.pickle
+
+# Local credentials and environment configuration
+.env
+.env.*
+!.env.example
+!.env.template
+.aws/
+.ssh/
+*.pem
+*.key
+
+# Editor settings and operating-system files
+.vscode/
+.idea/
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+
+# Temporary files and runtime logs
+*.log
+*.tmp
+*.temp
+/tmp/
+/temp/

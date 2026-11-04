@@ -45,6 +45,9 @@ h1 {font-size: 2rem !important; font-weight: 650 !important; letter-spacing: -.0
 .st-key-kpi_content [data-testid="stMetricValue"] {font-size: 1.8rem;}
 .st-key-kpi_content table {font-size: .75rem;}
 .st-key-map_settings {padding: .5rem 1.25rem 0;}
+.st-key-repair_budget_tzs [data-testid="stNumberInput"] button {
+    display: none !important;
+}
 .map-legend {padding: .7rem 1.25rem 1rem; color: #687d88; font-size: .7rem;}
 .threshold-legend {display: flex; flex-wrap: wrap; gap: 1.25rem; margin-top: .7rem;}
 .threshold-legend span {display: flex; align-items: center; gap: .4rem;}

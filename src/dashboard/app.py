@@ -27,6 +27,7 @@ if not st.session_state.get("dashboard_defaults_applied"):
     )
 st.session_state.setdefault("map_collapsed", False)
 st.session_state.setdefault("kpi_collapsed", False)
+st.session_state.setdefault("repair_budget_tzs", 10_000_000.)
 for key, default in [("strategy_view", "Random selection"), ("map_color_mode", "Threshold"),
                      ("show_new_access", True), ("show_existing_access", True),
                      ("show_no_access", True)]:
@@ -44,11 +45,17 @@ def load_map_regions():
 
 
 @st.cache_data
+def load_region_predictions(region):
+    catalog = pd.read_csv(CACHE_DIR / "regions.csv").set_index("region")
+    return pd.read_csv(CACHE_DIR / catalog.loc[region, "directory"] / "predictions.csv")
+
+
+@st.cache_data
 def load_population_points(region, n_repairs, access_distance_m):
     catalog = pd.read_csv(CACHE_DIR / "regions.csv").set_index("region")
     directory = CACHE_DIR / catalog.loc[region, "directory"]
     population = pd.read_csv(directory / "baseline_access.csv")
-    predictions = pd.read_csv(directory / "predictions.csv")
+    predictions = load_region_predictions(region)
     access, selected, random_selected = scenario.compare_strategies(
         population, predictions, n_repairs, access_distance_m=access_distance_m,
     )
@@ -142,7 +149,8 @@ def workspace():
     widths = ([0.55, 9.65, 2.7] if st.session_state["map_collapsed"] else
               [9.65, 0.55, 2.7] if st.session_state["kpi_collapsed"] else [5.5, 4.7, 2.7])
     map_column, kpi_column, controls_column = st.columns(widths, gap="medium")
-    with controls_column, st.container(key="controls_panel"):
+    controls_panel = controls_column.container(key="controls_panel")
+    with controls_panel:
         st.html('<div class="controls-eyebrow">YOUR SCENARIO</div>')
         st.subheader("Scenario settings")
         st.caption("Choose a region and set your repair budget.")
@@ -160,21 +168,56 @@ def workspace():
         if population_scope == "Population near wells":
             st.caption("Fixed study area: within 2.5 km of any regional well, including across its border.")
         st.divider()
-        st.number_input("N_repairs", min_value=0, max_value=1000,
-                        step=1, key="repairs_input", on_change=sync_repairs,
-                        args=("repairs_input",))
-        st.slider("Number of repairs", min_value=0, max_value=1000,
-                  key="repairs_slider", on_change=sync_repairs,
-                  args=("repairs_slider",), label_visibility="collapsed")
-        cost_per_repair = st.number_input(
-            "Estimated cost per repair (TZS)", min_value=0., value=150_000.,
-            step=10_000., format="%.0f", key="cost_per_repair_tzs",
+        allocation_mode = st.segmented_control(
+            "Allocate by", ["N_repairs", "Repair budget"], default="N_repairs",
+            required=True, key="allocation_mode",
         )
+        budget_mode = allocation_mode == "Repair budget"
+        repair_fields = st.container()
+        repair_cost_field, service_fee_field = st.columns(2, gap="small")
+        with repair_cost_field:
+            cost_per_repair = st.number_input(
+                "Repair cost", min_value=0., value=150_000.,
+                step=10_000., format="%.0f", key="cost_per_repair_tzs",
+                help="Estimated repair cost per selected pump, in TZS.",
+            )
+        with service_fee_field:
+            service_call_fee = st.number_input(
+                "Service call fee", min_value=0., value=0.,
+                step=1_000., format="%.0f", key="service_call_fee_tzs",
+                help="Estimated cost in TZS of the service or diagnostic call per pump, including travel, inspection, and diagnosis.",
+            )
+        cost_per_check = cost_per_repair + service_call_fee
+        if budget_mode:
+            affordable_repairs = min(
+                int(st.session_state["repair_budget_tzs"] / cost_per_check),
+                len(load_region_predictions(region)),
+            ) if cost_per_check > 0 else 0
+            st.session_state["repairs_input"] = affordable_repairs
+            st.session_state["repairs_slider"] = affordable_repairs
+        repair_max = max(1000, st.session_state["repairs_input"])
+        with repair_fields:
+            count_field, budget_field = st.columns(2, gap="small")
+            with count_field:
+                st.number_input("N_repairs", min_value=0, max_value=repair_max,
+                                step=1, key="repairs_input", on_change=sync_repairs,
+                                args=("repairs_input",), disabled=budget_mode)
+            with budget_field:
+                st.number_input("Repair budget (TZS)", min_value=0.,
+                                format="%.0f", key="repair_budget_tzs", disabled=not budget_mode)
+            st.slider("Number of repairs", min_value=0, max_value=repair_max,
+                      key="repairs_slider", on_change=sync_repairs,
+                      args=("repairs_slider",), label_visibility="collapsed", disabled=budget_mode)
+        if budget_mode and cost_per_check == 0:
+            st.caption("Enter a repair cost or service call fee greater than zero to allocate the budget.")
         st.html('<div class="controls-note">Retrospective repair simulation using cached predictions and known working-well records.</div>')
 
     access, selected, random_selected = load_population_points(
         region, st.session_state["repairs_input"], threshold_km * 1000,
     )
+    if budget_mode:
+        with controls_panel:
+            st.caption(f"{len(selected):,} pump checks · {len(selected) * cost_per_check:,.0f} TZS allocated · {st.session_state['repair_budget_tzs'] - len(selected) * cost_per_check:,.0f} TZS remaining")
     scope_key = "full_region" if population_scope == "Full population" else "nearby_population"
     metrics = calculate_access_kpis(access, access_distance_m=threshold_km * 1000)[scope_key]
     scope_column = "within_region" if population_scope == "Full population" else "within_candidate_radius"
@@ -283,15 +326,16 @@ def workspace():
                     random_gain = metrics["population_gaining_access_random"]
                     strategy_gain = metrics["population_gaining_access"]
                     st.markdown("**Financials**")
-                    total_cost = len(selected) * cost_per_repair
+                    total_cost = len(selected) * cost_per_check
+                    random_cost = len(random_selected) * cost_per_check
                     costs = pd.DataFrame({
-                        "Random": [len(random_selected) * cost_per_repair, cost_per_repair,
-                                   total_cost * 1000 / random_gain if random_gain > 0 else np.nan],
-                        "Our approach": [total_cost, cost_per_repair,
+                        "Random": [random_cost, cost_per_repair, service_call_fee,
+                                   random_cost * 1000 / random_gain if random_gain > 0 else np.nan],
+                        "Our approach": [total_cost, cost_per_repair, service_call_fee,
                                          total_cost * 1000 / strategy_gain if strategy_gain > 0 else np.nan],
-                    }, index=["Total TZS spent", "Cost per repair (TZS)", "**TZS per 1,000 people gaining access**"])
+                    }, index=["Total TZS spent", "Repair cost (TZS)", "Service call fee (TZS)", "**TZS per 1,000 people gaining access**"])
                     st.table(costs.style.format("{:,.0f}", na_rep="—"))
-                    st.caption("Cost is applied to every pump check, including checks without a successful repair. Random uses seed 42.")
+                    st.caption("Repair cost plus service call fee is reserved for every selected pump, including checks without a successful repair. Random uses seed 42.")
                     st.divider()
                     gain_chart, total_chart = st.columns(2, gap="small")
                     with gain_chart:

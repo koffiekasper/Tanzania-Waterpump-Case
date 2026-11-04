@@ -18,11 +18,18 @@ from water_wells.kpi_metrics import calculate_access_kpis
 
 st.set_page_config(page_title="Water access | Tanzania", page_icon="💧", layout="wide")
 st.html((Path(__file__).with_name("style.css")).read_text())
-st.session_state.setdefault("repairs_input", 100)
-st.session_state.setdefault("repairs_slider", 100)
+if not st.session_state.get("dashboard_defaults_applied"):
+    st.session_state.update(
+        region="Dar es Salaam", repairs_input=50, repairs_slider=50,
+        water_access_threshold_km=2.5, population_scope="Population near wells",
+        strategy_view="Random selection", map_color_mode="Threshold",
+        dashboard_defaults_applied=True,
+    )
 st.session_state.setdefault("map_collapsed", False)
 st.session_state.setdefault("kpi_collapsed", False)
-for key, default in [("strategy_view", "Before strategy"), ("map_color_mode", "Threshold bands")]:
+for key, default in [("strategy_view", "Random selection"), ("map_color_mode", "Threshold"),
+                     ("show_new_access", True), ("show_existing_access", True),
+                     ("show_no_access", True)]:
     st.session_state[key] = st.session_state.get(key, default)
 CACHE_DIR = Path(__file__).resolve().parents[2] / "data/processed/dashboard"
 
@@ -99,17 +106,22 @@ def panel_rail(title, panel):
         st.html(f'<div class="rail-label">{title}</div>')
 
 
-def comparison_chart(random_value, strategy_value):
-    data = pd.DataFrame({"Approach": ["Random", "Our approach"],
-                         "Population": [random_value, strategy_value]})
+def comparison_chart(random_value, strategy_value, baseline_value=None):
+    approaches = ["Random", "Our approach"]
+    values = [random_value, strategy_value]
+    colors = ["#99AAB4", "#087F8C"]
+    if baseline_value is not None:
+        approaches.insert(0, "No repairs")
+        values.insert(0, baseline_value)
+        colors.insert(0, "#CCD5DA")
+    data = pd.DataFrame({"Approach": approaches, "Population": values})
     chart = alt.Chart(data).encode(
-        x=alt.X("Approach:N", sort=["Random", "Our approach"], title=None,
+        x=alt.X("Approach:N", sort=approaches, title=None,
                 axis=alt.Axis(labelAngle=0, labelFontSize=10)),
         y=alt.Y("Population:Q", title="People", axis=alt.Axis(format="~s"),
-                scale=alt.Scale(domain=[0, max(1, max(random_value, strategy_value) * 1.2)])),
+                scale=alt.Scale(domain=[0, max(1, max(values) * 1.2)])),
         color=alt.Color("Approach:N", legend=None,
-                        scale=alt.Scale(domain=["Random", "Our approach"],
-                                        range=["#99AAB4", "#087F8C"])),
+                        scale=alt.Scale(domain=approaches, range=colors)),
         tooltip=["Approach:N", alt.Tooltip("Population:Q", format=",.0f")],
     )
     bars = chart.mark_bar(size=36, cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
@@ -119,12 +131,12 @@ def comparison_chart(random_value, strategy_value):
     return (bars + labels).properties(height=210).configure_view(strokeWidth=0)
 
 
-def workspace(title="Water access overview"):
+def workspace():
     regions, geometries = load_map_regions()
-    st.session_state.setdefault("region", "Morogoro" if "Morogoro" in regions else regions[0])
+    st.session_state.setdefault("region", "Dar es Salaam" if "Dar es Salaam" in regions else regions[0])
     with st.container(key="intro"):
         st.caption("TANZANIA  /  WATER INFRASTRUCTURE")
-        st.title(title)
+        st.title("Water access overview")
         st.write("Explore a region and plan your next intervention.")
 
     widths = ([0.55, 9.65, 2.7] if st.session_state["map_collapsed"] else
@@ -136,13 +148,13 @@ def workspace(title="Water access overview"):
         st.caption("Choose a region and set your repair budget.")
         region = st.selectbox("Region", regions, key="region")
         threshold_km = st.number_input(
-            "Water access threshold (KM)", min_value=0.1, value=2.5, step=0.5,
+            "Water access threshold (KM)", min_value=0.1, step=0.5, format="%.2f",
             key="water_access_threshold_km",
-            help="People at or within this distance of a working well have access. Also updates strategy selection. Choose threshold bands or a distance gradient above the map.",
+            help="People at or within this distance of a working well have access. Also updates strategy selection. Choose Threshold or a distance gradient above the map.",
         )
         population_scope = st.segmented_control(
             "Population scope", ["Full population", "Population near wells"],
-            default="Full population", selection_mode="single", required=True,
+            selection_mode="single", required=True,
             key="population_scope",
         )
         if population_scope == "Population near wells":
@@ -179,35 +191,52 @@ def workspace(title="Water access overview"):
                 panel_header("Map view", "map")
                 with st.container(key="map_settings"):
                     strategy_view = st.segmented_control(
-                        "Strategy view", ["Before strategy", "After strategy"],
+                        "Strategy view", ["No repair", "Random selection", "Priority selection"],
                         selection_mode="single", required=True,
                         key="strategy_view",
                     )
                     color_mode = st.segmented_control(
-                        "Map colors", ["Threshold bands", "Gradient"],
+                        "Map colors", ["Threshold", "Gradient"],
                         selection_mode="single", required=True,
                         key="map_color_mode",
                     )
-                    if strategy_view == "Before strategy":
+                    show_new_access = st.toggle("Show new water access", key="show_new_access")
+                    show_existing_access = st.toggle("Show existing water access", key="show_existing_access")
+                    show_no_access = st.toggle("Show no water access", key="show_no_access")
+                    if strategy_view == "No repair":
+                        st.caption("Ground-truth functional wells only; no repairs or interventions.")
+                    elif strategy_view == "Random selection":
                         st.caption("Random sampling of pumps using the same repair budget (seed 42).")
                     else:
                         st.caption("Pumps prioritized for expected access gains across the full region.")
-                distance_column = (
-                    "distance_to_nearest_functional_well_with_random_interventions_m"
-                    if strategy_view == "Before strategy" else "distance_to_nearest_functional_well_m"
-                )
+                distance_column = {
+                    "No repair": "distance_to_nearest_functional_well_without_intervention_m",
+                    "Random selection": "distance_to_nearest_functional_well_with_random_interventions_m",
+                    "Priority selection": "distance_to_nearest_functional_well_m",
+                }[strategy_view]
                 points["distance_m"] = points[distance_column]
                 points["distance_km"] = (points["distance_m"] / 1000).round(2)
                 threshold_m = threshold_km * 1000
-                distance_scale = np.clip((points["distance_m"].fillna(np.inf).to_numpy() - threshold_m) / (3 * threshold_m), 0, 1)
-                if color_mode == "Threshold bands":
+                distance_scale = np.clip((points["distance_m"].fillna(np.inf).to_numpy() - threshold_m) / threshold_m, 0, 1)
+                if color_mode == "Threshold":
                     distance_scale = points["distance_m"].fillna(np.inf).gt(threshold_m).to_numpy(dtype=float)
                 palette = np.array([[78, 112, 139], [255, 0, 0]])
                 rgb = np.column_stack([
                     np.interp(distance_scale, [0, 1], palette[:, channel])
                     for channel in range(3)
                 ]).round().astype(int)
-                points["color"] = np.column_stack([rgb, np.full(len(points), 255)]).tolist()
+                population_alpha = (np.clip(points["population"].to_numpy() / 100, 0, 1) * 255).round().astype(int)
+                new_access = (
+                    points["distance_to_nearest_functional_well_without_intervention_m"].gt(threshold_m)
+                    & points["distance_m"].le(threshold_m)
+                ).to_numpy()
+                existing_access = points["distance_to_nearest_functional_well_without_intervention_m"].le(threshold_m).to_numpy()
+                no_access = points["distance_m"].gt(threshold_m).to_numpy()
+                points["color"] = np.column_stack([rgb, population_alpha]).tolist()
+                visible = ((show_new_access & new_access)
+                           | (show_existing_access & existing_access)
+                           | (show_no_access & no_access))
+                points = points.loc[visible].copy()
                 population_layer = pdk.Layer(
                     "PolygonLayer", id="population-distance", data=points,
                     get_polygon="cell_polygon", get_fill_color="color", opacity=1,
@@ -216,15 +245,15 @@ def workspace(title="Water access overview"):
                 st.pydeck_chart(
                     pdk.Deck(
                         layers=[population_layer], initial_view_state=view,
-                        map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+                        map_style="https://basemaps.cartocdn.com/gl/positron-nolabels-gl-style/style.json",
                         map_provider="carto", tooltip={
                             "html": "<b>Population:</b> {population}<br/><b>Nearest functional well:</b> {distance_km} km",
                         },
                     ),
                     height=560, key=f"region_map_{region}",
-                    alt=f"{population_scope} for {region}: raster cells colored by distance to a functional well",
+                    alt=f"{population_scope} for {region}: color shows well distance; opacity shows population",
                 )
-                if color_mode == "Threshold bands":
+                if color_mode == "Threshold":
                     st.html(f'''<div class="map-legend">
                         <span>Distance to a functional well · {strategy_view.lower()}</span>
                         <div class="threshold-legend">
@@ -236,9 +265,11 @@ def workspace(title="Water access overview"):
                     st.html(f'''<div class="map-legend">
                         <span>Distance to a functional well · {strategy_view.lower()}</span>
                         <div class="distance-gradient"></div>
-                        <div class="distance-labels"><span>0 km</span><span>{threshold_km:g} km</span><span>{threshold_km * 4:g}+ km</span></div>
-                        <p class="opacity-note">Grey-blue through {threshold_km:g} km; grey-blue to red up to {threshold_km * 4:g} km. Each cell is one population pixel.</p>
+                        <div class="distance-labels"><span>0 km</span><span>{threshold_km:g} km</span><span>{threshold_km * 2:g}+ km</span></div>
+                        <p class="opacity-note">Grey-blue through {threshold_km:g} km; grey-blue to red up to {threshold_km * 2:g} km. Each cell is one population pixel.</p>
                     </div>''')
+
+                st.caption("Visibility toggles affect only the map, not the KPIs. Opacity shows population, reaching fully opaque at 100+ people per pixel.")
 
 
     with kpi_column:
@@ -249,6 +280,19 @@ def workspace(title="Water access overview"):
                 panel_header("KPI overview", "kpi")
                 with st.container(key="kpi_content"):
                     st.caption(f"{population_scope} · {metrics['population_total']:,.0f} people · {len(selected):,} pump checks")
+                    random_gain = metrics["population_gaining_access_random"]
+                    strategy_gain = metrics["population_gaining_access"]
+                    st.markdown("**Financials**")
+                    total_cost = len(selected) * cost_per_repair
+                    costs = pd.DataFrame({
+                        "Random": [len(random_selected) * cost_per_repair, cost_per_repair,
+                                   total_cost * 1000 / random_gain if random_gain > 0 else np.nan],
+                        "Our approach": [total_cost, cost_per_repair,
+                                         total_cost * 1000 / strategy_gain if strategy_gain > 0 else np.nan],
+                    }, index=["Total TZS spent", "Cost per repair (TZS)", "**TZS per 1,000 people gaining access**"])
+                    st.table(costs.style.format("{:,.0f}", na_rep="—"))
+                    st.caption("Cost is applied to every pump check, including checks without a successful repair. Random uses seed 42.")
+                    st.divider()
                     gain_chart, total_chart = st.columns(2, gap="small")
                     with gain_chart:
                         st.markdown("**Population gaining access**")
@@ -259,51 +303,14 @@ def workspace(title="Water access overview"):
                         st.markdown("**Total population with access**")
                         st.altair_chart(comparison_chart(
                             metrics["population_with_access_random"], metrics["population_with_access_after"],
+                            baseline_value=metrics["population_with_access_before"],
                         ), width="stretch", key="total_comparison")
-                    st.caption(f"Already had access before any intervention: {metrics['population_with_access_before']:,.0f} people.")
-                    random_gain = metrics["population_gaining_access_random"]
-                    strategy_gain = metrics["population_gaining_access"]
+                        st.caption(f"Total population in view: {metrics['population_total']:,.0f} people.")
                     relative_gain = f"{(strategy_gain / random_gain - 1) * 100:+.1f}% vs random" if random_gain > 0 else None
                     st.metric("Improvement over random baseline", f"{strategy_gain - random_gain:+,.0f} people",
                               delta=relative_gain)
-                    st.divider()
-                    st.markdown("**Intervention costs**")
-                    total_cost = len(selected) * cost_per_repair
-                    costs = pd.DataFrame({
-                        "Random": [len(random_selected) * cost_per_repair, cost_per_repair,
-                                   total_cost * 1000 / random_gain if random_gain > 0 else np.nan],
-                        "Our approach": [total_cost, cost_per_repair,
-                                         total_cost * 1000 / strategy_gain if strategy_gain > 0 else np.nan],
-                    }, index=["Total TZS spent", "Cost per repair (TZS)", "TZS per 1,000 people gaining access"])
-                    st.table(costs.style.format("{:,.0f}", na_rep="—"))
-                    st.caption("Cost is applied to every pump check, including checks without a successful repair. Random uses seed 42.")
 
 
-def page_one():
-    workspace()
-
-
-def page_two():
-    workspace("Page 2")
-
-
-def page_three():
-    workspace("Page 3")
-
-
-pages = [
-    st.Page(page_one, title="Page 1", default=True),
-    st.Page(page_two, title="Page 2", url_path="page-2"),
-    st.Page(page_three, title="Page 3", url_path="page-3"),
-]
-page = st.navigation(pages, position="hidden")
 with st.container(key="topbar"):
-    brand, links = st.columns([3, 2], vertical_alignment="center")
-    with brand:
-        st.html('<div class="brand"><span class="brand-mark">◈</span><span>Water access<span class="brand-country">TANZANIA</span></span></div>')
-    with links:
-        link_columns = st.columns(3)
-        for column, destination in zip(link_columns, pages):
-            with column:
-                st.page_link(destination, label=destination.title, width="stretch")
-page.run()
+    st.html('<div class="brand"><span class="brand-mark">◈</span><span>Water access<span class="brand-country">TANZANIA</span></span></div>')
+workspace()

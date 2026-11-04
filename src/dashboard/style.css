@@ -7,8 +7,6 @@
 .brand-mark {display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px;
     color: #087f8c; background: #e9f5f4; font-size: 1.8rem;}
 .brand-country {display: block; color: #84959d; font-size: .58rem; letter-spacing: .19em; margin-top: .05rem;}
-.st-key-topbar [data-testid="stPageLink-NavLink"] {justify-content: center; border-radius: 8px; color: #677983;}
-.st-key-topbar [data-testid="stPageLink-NavLink"][aria-current="page"] {color: #087f8c; background: #edf6f5;}
 .st-key-intro {padding: 1.8rem 0 .6rem;}
 .st-key-intro [data-testid="stCaptionContainer"] {color: #71868f; font-size: .68rem; letter-spacing: .13em; font-weight: 600;}
 h1 {font-size: 2rem !important; font-weight: 650 !important; letter-spacing: -.055rem; padding-top: .35rem !important;}
@@ -52,12 +50,12 @@ h1 {font-size: 2rem !important; font-weight: 650 !important; letter-spacing: -.0
 .threshold-legend span {display: flex; align-items: center; gap: .4rem;}
 .threshold-legend i {display: inline-block; width: 12px; height: 12px; border-radius: 2px;}
 .distance-gradient {height: 7px; border-radius: 4px; margin: .65rem 0 .35rem;
-    background: linear-gradient(to right, #4e708b 0%, #4e708b 25%, #ff0000 100%); border: 1px solid #e1e7eb;}
+    background: linear-gradient(to right, #4e708b 0%, #4e708b 50%, #ff0000 100%); border: 1px solid #e1e7eb;}
 .opacity-note {margin: .75rem 0 0; font-size: .65rem; line-height: 1.6; color: #819099;}
 .distance-labels {position: relative; height: 1rem; font-size: .65rem;}
 .distance-labels span {position: absolute;}
 .distance-labels span:first-child {left: 0;}
-.distance-labels span:nth-child(2) {left: 25%; transform: translateX(-50%);}
+.distance-labels span:nth-child(2) {left: 50%; transform: translateX(-50%);}
 .distance-labels span:last-child {right: 0;}
 @media (max-width: 850px) {
     [data-testid="stMainBlockContainer"] {padding-left: 1rem; padding-right: 1rem;}

@@ -51,6 +51,14 @@ def load_region_predictions(region):
 
 
 @st.cache_data
+def load_well_identifiers():
+    return pd.read_csv(CACHE_DIR / "shared/wells.csv", usecols=[
+        "id", "wpt_name", "region", "region_code", "district_code", "lga",
+        "ward", "subvillage", "scheme_name", "waterpoint_type", "source",
+    ])
+
+
+@st.cache_data
 def load_population_points(region, n_repairs, access_distance_m):
     catalog = pd.read_csv(CACHE_DIR / "regions.csv").set_index("region")
     directory = CACHE_DIR / catalog.loc[region, "directory"]
@@ -151,6 +159,7 @@ def workspace():
     map_column, kpi_column, controls_column = st.columns(widths, gap="medium")
     controls_panel = controls_column.container(key="controls_panel")
     with controls_panel:
+        repair_plan_download = st.empty()
         st.html('<div class="controls-eyebrow">YOUR SCENARIO</div>')
         st.subheader("Scenario settings")
         st.caption("Choose a region and set your repair budget.")
@@ -214,6 +223,20 @@ def workspace():
 
     access, selected, random_selected = load_population_points(
         region, st.session_state["repairs_input"], threshold_km * 1000,
+    )
+    repair_plan = selected.sort_values("selection_rank").merge(
+        load_well_identifiers(), on="id", how="left", validate="one_to_one",
+    )
+    repair_plan = repair_plan[[
+        "selection_rank", "id", "wpt_name", "region", "latitude", "longitude",
+        "lga", "ward", "subvillage",
+        "scheme_name", "waterpoint_type", "source", "expected_population_gain",
+    ]].rename(columns={"expected_population_gain": "Expected water access increase"})
+    repair_plan_download.download_button(
+        "Get repair plan", data=repair_plan.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"repair_plan_{region.lower().replace(' ', '_')}.csv",
+        mime="text/csv", key="repair_plan_download", type="primary", width="stretch",
+        on_click="ignore",
     )
     if budget_mode:
         with controls_panel:

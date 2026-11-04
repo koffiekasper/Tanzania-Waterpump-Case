@@ -9,8 +9,13 @@ from .data_loader import TARGET_CLASSES
 
 class ModelEvaluator:
     def metrics(self, y_true, y_pred, average="weighted"):
-        precision, recall, f1, _ = precision_recall_fscore_support(
-            y_true, y_pred, labels=TARGET_CLASSES, average=average, zero_division=0)
+        if average in ("weighted", "macro"):
+            report = self.classification_report(y_true, y_pred, output_dict=True)
+            summary = report[f"{average} avg"]
+            precision, recall, f1 = (summary[key] for key in ("precision", "recall", "f1-score"))
+        else:
+            precision, recall, f1, _ = precision_recall_fscore_support(
+                y_true, y_pred, labels=TARGET_CLASSES, average=average, zero_division=0)
         return {"accuracy": accuracy_score(y_true, y_pred), "precision": precision,
                 "recall": recall, "f1": f1}
 

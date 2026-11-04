@@ -5,11 +5,12 @@ import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.utils.validation import check_is_fitted
+from sklearn.preprocessing import LabelEncoder
+from xgboost import XGBClassifier
 from .config import TrainingConfig
 from .feature_engineering import FeatureEngineer
 from .preprocessing import DataPreprocessor
-from .modeling import WaterWellClassifier
+from .population_features import PopulationFeatures
 
 
 class TrainingPipeline(ClassifierMixin, BaseEstimator):
@@ -26,16 +27,17 @@ class TrainingPipeline(ClassifierMixin, BaseEstimator):
         self.cache_dir = cache_dir
         self.data_mode = data_mode
 
-    def prepare_data(self, X, output_path=None):
+    def prepare_population_data(self, X, output_path=None):
         """Populate/reuse the geo cache before splitting; optionally export CSV.
 
         Only external raster features are computed here. Training-dependent
         neighbor counts and encoders remain inside fit, after splitting.
         """
-        data = FeatureEngineer(
-            population_raster=self.population_raster,
-            cache_dir=self.cache_dir, data_mode=self.data_mode,
-        ).prepare_population(X)
+        data = X.copy()
+        if self.population_raster is not None:
+            data = PopulationFeatures(
+                self.population_raster, self.cache_dir, self.data_mode,
+            ).add_features(data)
         if output_path is not None:
             path = Path(output_path)
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -51,35 +53,36 @@ class TrainingPipeline(ClassifierMixin, BaseEstimator):
     def fit(self, X, y):
         """Fit exactly the supplied rows; use split() first for validation."""
         config = self.config or TrainingConfig()
+        self.label_encoder_ = LabelEncoder().fit(y)
+        params = TrainingConfig().xgb_params.copy()
+        params.update(config.xgb_params)
+        params.setdefault("random_state", config.random_seed)
+        params.update(objective="multi:softprob", num_class=3)
         self.pipeline_ = Pipeline([
             ("features", FeatureEngineer(
                 population_raster=self.population_raster,
                 cache_dir=self.cache_dir, data_mode=self.data_mode,
             )),
             ("preprocessing", DataPreprocessor(config.min_frequency, config.max_categories)),
-            ("classifier", WaterWellClassifier(config.xgb_params, config.random_seed)),
+            ("classifier", XGBClassifier(**params)),
         ])
-        self.pipeline_.fit(X, y)
-        self.classes_ = self.classifier.classes_
+        self.pipeline_.fit(X, self.label_encoder_.transform(y))
+        self.classes_ = self.label_encoder_.classes_
         return self
 
     @property
     def classifier(self):
-        check_is_fitted(self, "pipeline_")
         return self.pipeline_.named_steps["classifier"]
 
     @property
     def preprocessor(self):
-        check_is_fitted(self, "pipeline_")
         return self.pipeline_.named_steps["preprocessing"]
 
     def predict(self, X):
-        check_is_fitted(self, "pipeline_")
-        return self.pipeline_.predict(X)
+        return self.label_encoder_.inverse_transform(self.pipeline_.predict(X).astype(int))
 
     def predict_proba(self, X):
         """Return probabilities with readable class names, in input row order."""
-        check_is_fitted(self, "pipeline_")
         return pd.DataFrame(self.pipeline_.predict_proba(X), index=X.index,
                             columns=self.classes_)
 
@@ -92,7 +95,6 @@ class TrainingPipeline(ClassifierMixin, BaseEstimator):
         return result
 
     def save(self, path: str | Path | None = None):
-        check_is_fitted(self, "pipeline_")
         path = Path(path or (self.config or TrainingConfig()).model_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(self, path)
@@ -101,7 +103,4 @@ class TrainingPipeline(ClassifierMixin, BaseEstimator):
     def load(cls, path: str | Path):
         """Load only trusted artifacts; joblib deserialization executes code."""
         artifact = joblib.load(path)
-        if not isinstance(artifact, cls):
-            raise TypeError("Artifact is not a TrainingPipeline")
-        check_is_fitted(artifact, "pipeline_")
         return artifact

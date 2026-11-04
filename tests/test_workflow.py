@@ -313,3 +313,27 @@ def test_pipeline_owns_target_encoding_and_xgboost(wells, target, config):
     assert params["learning_rate"] == 0.05
     assert params["random_state"] == config.random_seed
     assert params["objective"] == "multi:softprob"
+
+
+@pytest.mark.parametrize("strategy", ["stratified", "uniform", "most_frequent"])
+def test_evaluator_baseline_predictions_match_dummy_classifier(strategy):
+    from sklearn.dummy import DummyClassifier
+    from pandas.testing import assert_series_equal
+
+    X_train = pd.DataFrame({"unused_feature": range(10)})
+    y_train = pd.Series([TARGET_CLASSES[0]] * 7 + [TARGET_CLASSES[1]] * 2 + [TARGET_CLASSES[2]])
+    X_valid = pd.DataFrame({"unused_feature": [100, 200, 300, 400]}, index=[7, 7, 2, 9])
+    evaluator = ModelEvaluator()
+    actual = evaluator.baseline_predictions(X_train, y_train, X_valid, strategy=strategy)
+    expected = DummyClassifier(strategy=strategy, random_state=42).fit(X_train, y_train).predict(X_valid)
+    np.testing.assert_array_equal(actual.to_numpy(), expected)
+    assert actual.index.equals(X_valid.index)
+    assert_series_equal(actual, evaluator.baseline_predictions(
+        X_train, y_train, X_valid, strategy=strategy,
+    ))
+    # Baselines depend on training labels and validation row count, not feature values.
+    assert_series_equal(actual, evaluator.baseline_predictions(
+        X_train * -1, y_train, X_valid * -1, strategy=strategy,
+    ))
+    if strategy == "most_frequent":
+        assert actual.eq(TARGET_CLASSES[0]).all()

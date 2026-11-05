@@ -1,167 +1,89 @@
 # Tanzania water access: prioritizing pump repairs
 
-\<write here on the client's repair-planning decision, the limited budget, and the objective of increasing population access to working water points>
+This proof of concept helps prioritize water-pump inspections and repairs in Tanzania under a limited budget. The goal is to increase the number of people with access to a working pump.
 
 ## The proposal at a glance
 
-\<write here on what the proof of concept delivers, who would use it, the main finding, and the decision it helps the client make>
+An interactive dashboard compares repair strategies within a selected region. Users can explore estimated access gains, costs, and a downloadable repair plan.
 
-\<image placeholder: dashboard overview showing the regional map, scenario controls, and KPI comparison>
+![Dashboard overview](image-1.png)
 
-## From a repair budget to an actionable plan
+## Using the dashboard
 
-\<write here on selecting a region, entering a number of pump checks or a repair budget, setting service and repair costs, comparing scenarios, and downloading the ranked repair-plan CSV>
+Select a region, enter a number of pump checks or a financial budget, and set repair and service-call costs. Compare no repairs, random selection, and priority selection on the map. The KPI panel shows population gains, total access, and costs. **Get repair plan** downloads the prioritized wells, identifying details, and expected access increase as CSV.
 
-\<write here on the difference between checks and successful repairs, and the CSV's well identifiers, locations, priority ranks, and expected additional people gaining access>
+## Approach and main findings
 
-## Why predicting broken pumps is only part of the problem
+XGBoost predicts pump functionality using pump characteristics, nearby-well counts, and population-radius features. Selecting the most confidently nonfunctional pumps did not beat random selection in the initial access experiment. The priority strategy instead ranks pumps by expected additional people gaining access, accounting for overlapping catchments.
 
-\<write here on the initial confidence-first strategy, its comparison against equal-budget random selection, and why identifying failures does not necessarily maximize additional water access>
+In the saved evaluation, validation accuracy was **79.4%**, compared with **45.6%** for a random classifier and **54.4%** for the majority-class baseline. In Morogoro, with 300 checks and a 2.5 km access threshold, simulated full-region coverage improved by **6.47 percentage points** under access prioritization, versus **1.18** for random selection and **1.02** for confidence-first selection. These are retrospective estimates from one experiment, not observed field outcomes.
 
-\<write here on prioritizing failure probability multiplied by currently unserved population, accounting for overlapping catchments and earlier selections>
+## Evaluation methodology
 
-## Evidence and results
+Morogoro is excluded from model training and validation to assess performance in an unseen region. Regional feature-profile similarity informed this demonstration choice; it does not establish representativeness across Tanzania. Encoders and training-reference neighbor features are fitted only on training rows.
 
-### Classification performance on unseen wells and an unseen region
+Access is estimated by summing population pixels within a configurable straight-line distance of a working pump. Results cover either the full region or a fixed 2.5 km catchment around candidate wells. Each comparison uses the same population denominator. Selected truly nonfunctional pumps are assumed successfully repaired; false positives consume checks without increasing access.
 
-\<write here on current validation and geographic-holdout results, random and majority classification baselines, and nonfunctional-class precision–recall performance>
+## Data and implementation
 
-\<image or table placeholder: selected results from notebooks/02_model_evaluation.ipynb, with split names, metric definitions, and evaluation settings>
+The project combines [DrivenData pump records and status labels](https://www.drivendata.org/competitions/7/), a [WorldPop population raster](https://hub.worldpop.org/project/categories?id=3) for 2026 at approximately 1 km resolution, and [Tanzania regional boundaries](https://github.com/wmgeolab/geoBoundaries/blob/9469f09/releaseData/gbOpen/TZA/ADM1/geoBoundaries-TZA-ADM1.geojson).
 
-### Water-access gains under the same repair constraints
-
-\<write here on confidence-first, random, and expected-access strategies under the same number of checks, the evaluated region, access threshold, and population scope>
-
-\<write here on realized additional people gaining access, total people with access, improvement over random, and the distinction between expected ranking scores and realized simulated outcomes>
-
-\<image placeholder: strategy comparison from notebook 03 or the dashboard, showing gains and total access with matching settings>
-
-\<write here on whether the observed improvement is consistent beyond this example, the use of one seeded random realization, and what cannot yet be concluded>
-
-## How water access is estimated
-
-### Access definition and travel-time context
-
-\<write here on why collection time matters, the relevance of walking, and the evidence required before making claims about vehicle or bicycle availability>
-
-\<write here on the distinction between a 30-minute collection round trip and the configurable 2.5 km one-way straight-line distance proxy; include the implied walking time, return journey, queues, terrain, and routes before equating them>
-
-\<source placeholder: UNICEF collection-time context — https://www.unicef.org/press-releases/unicef-collecting-water-often-colossal-waste-time-women-and-girls>
-
-\<image placeholder: access-distance illustration or notebook distance distribution with the chosen threshold clearly marked>
-
-### Geographic holdout and the Morogoro demonstration
-
-\<write here on reserving a complete region from model fitting and cross-validation, evaluating generalization to an unseen region, and keeping training-dependent preprocessing inside each training split>
-
-\<write here on the Morogoro choice, the PCA visualization, and equal-weight regional centroid similarity calculated in the full transformed feature space rather than only the two plotted components>
-
-\<image placeholder: PCA of well features colored by region from notebook 03>
-
-\<image placeholder: highlighted regional profile and full-feature similarity ranking from notebook 03>
-
-\<write here on why an incomplete pump inventory in a randomized subset can distort nearest-working-well distances; distinguish this inventory-coverage problem from training/test leakage, and explain the remaining cross-boundary inventory limitation>
-
-### Population scopes and before/after scenarios
-
-\<write here on raster pixel centers and population weights, the fixed 2.5 km catchment around any candidate pump, the alternative full administrative-region population, and avoiding duplicate population counting where catchments overlap>
-
-\<write here on the no-repair baseline, adding selected truly nonfunctional pumps under an assumed successful repair, treating false positives as checks without additional access, and comparing against random checks on the same candidate pool>
-
-\<write here on nearest functional well IDs and distances before and after intervention, summing population within the inclusive access threshold, and keeping the population denominator fixed within each comparison>
-
-\<image placeholder: before/after nearest-functional-well distance distribution for Morogoro from notebook 03; identify whether the vertical axis counts pixels or people>
-
-## Data and geographic context
-
-### Pump records, population raster, and administrative boundaries
-
-\<write here on the pump dataset and target classes, population-raster provider and version, reference years, spatial resolution, units, boundary source, licenses, and how each input is used>
-
-\<source placeholder: pump dataset and license>
-
-\<source placeholder: population TIFF provider, download location, methodology, and license>
-
-\<source placeholder: pinned Tanzania ADM1 boundaries — https://github.com/wmgeolab/geoBoundaries/blob/9469f09/releaseData/gbOpen/TZA/ADM1/geoBoundaries-TZA-ADM1.geojson>
-
-### Population plausibility check: Dar es Salaam
-
-\<write here on the approximately 5.6 million population sum within 20 km of the selected pump, the coordinates and raster year, and its use as a plausibility check rather than a validated regional total>
-
-\<write here on the external city-population estimate, its source and reference year, the difference between a circular catchment and administrative or metropolitan boundaries, and why the totals need not match>
-
-\<image placeholder: cited city population and density reference, with date and geographic definition visible>
-
-\<image placeholder: GPS map of the selected Dar es Salaam location and its 20 km catchment>
-
-\<image placeholder: satellite view of the same location and catchment>
-
-\<image placeholder: street-level photograph of the same area, with location and image attribution>
-
-## Technical implementation
-
-### Modeling and feature engineering
-
-\<write here on CSV label alignment by well ID, well age and missingness handling, training-reference neighbor counts, categorical encoding, XGBoost, and external population sums at 1, 2, 3, 5, 10, and 20 km>
-
-### Intervention selection and evaluation
-
-\<write here on greedy expected marginal access gains, the known-working-well inventory assumption, overlap handling, seeded random selection, spatial nearest-neighbor queries, and reusable population-access dataframes>
-
-### Precomputation and interactive scenarios
-
-\<write here on separate geographic-holdout predictions for each region, the CSV cache, Streamlit's scenario-result cache, and which calculations rerun when a threshold or repair count changes>
-
-\<write here on manually refreshing disk caches when inputs or model settings change, and distinguish cached predictions from recalculated intervention selections>
-
-### Project layout and notebook reading order
-
-\<write here on src/water_wells for modeling and KPIs, src/dashboard for caching and the application, tests for validation, and the role of externally supplied data and generated artifacts>
-
-\<write here on notebooks/01_early_exploration_draft.ipynb as the historical pre-implementation prototype and its evaluation limitations>
-
-\<write here on notebooks/02_model_evaluation.ipynb as the evaluation of the current reusable pipeline>
-
-\<write here on notebooks/03_geographic_features_and_access_experiments.ipynb as the population, regional-holdout, and intervention-strategy experiments>
+`src/water_wells` contains modeling, feature engineering, and access KPIs. `src/dashboard` contains the Streamlit app and CSV-cache generator. Each region's predictions come from a model trained without that region. Changing repair constraints recalculates selection and access using cached predictions; it does not retrain the model.
 
 ## Run the project
 
-### 1. Prepare the Python environment
+### Setup and input data
 
-\<instruction placeholder: supported Python version, creating and activating a virtual environment, installing the editable package with dashboard and development extras, and running commands from the repository root>
+Use Python 3.10 or newer. From the repository root:
 
-### 2. Obtain and place the input data
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
 
-\<instruction placeholder: source links and required local paths for training features, labels, population TIFF, and Tanzania regional boundaries; identify files excluded from version control>
+Download the inputs from the sources above and place them at these paths. Rename the competition downloads to match the expected filenames. Input data and generated caches are excluded from version control.
 
-### 3. Build or refresh dashboard caches
+| Input | Local path |
+| --- | --- |
+| Training features | `4910797b-ee55-40a7-8668-10efd5c1b960.csv` |
+| Training labels | `0bf8bc6e-30d0-4c50-956a-603fc693d966.csv` |
+| WorldPop Tanzania, 2026, constrained 1 km, R2025A v1 | `tza_pop_2026_CN_1km_R2025A_UA_v1.tif` |
+| Regional boundaries | `data/raw/geoBoundaries-TZA-ADM1.geojson` |
 
-\<instruction placeholder: run the dashboard.cache_data module, demonstrate caching one named region before all regions, describe the refresh option, expected runtime, output location, and when existing CSVs are reused>
+### Prepare and launch the dashboard
 
-### 4. Launch the dashboard and generate a repair plan
+Build a cache for one region, then launch the app:
 
-\<instruction placeholder: the Streamlit launch command for src/dashboard/app.py, opening the local app, selecting a cached region, setting repair constraints, interpreting the views, and downloading the plan>
+```bash
+python -m dashboard.cache_data --regions "Dar es Salaam"
+python -m streamlit run src/dashboard/app.py
+```
 
-### 5. Reproduce the notebook analyses
+Omit `--regions` to prepare all regions. Existing CSV caches are reused; add `--refresh` after changing data or model settings. Generated files are saved under `data/processed/dashboard`. The first run includes training and geographic processing and takes longer than subsequent use.
 
-\<instruction placeholder: start Jupyter, select the project environment, follow the numbered notebook order, run cells from a fresh session, and identify the historical prototype versus current evaluation>
+### Reproduce the analysis and run tests
 
-### 6. Run verification
+```bash
+python -m jupyterlab
+python -m pytest -q
+```
 
-\<instruction placeholder: run the standard pytest suite, explain the opt-in full-training test and its environment variable, and state the dependencies and compute needed for full-data execution>
+Run notebooks in this order, using the project environment and a fresh session:
 
-## Assumptions, limitations, and next steps
+1. [Early exploration draft](notebooks/01_early_exploration_draft.ipynb): historical experiments before the reusable implementation; preprocessing precedes splitting in this prototype.
+2. [Model evaluation](notebooks/02_model_evaluation.ipynb): current pipeline, baselines, geographic holdout, and cross-validation.
+3. [Geographic and access experiments](notebooks/03_geographic_features_and_access_experiments.ipynb): population features, regional similarity, and repair-strategy comparison.
 
-### Interpretation of the proof of concept
+The full-data training test is optional: run `WATER_WELLS_FULL_TRAIN=1 python -m pytest -q tests/test_integration.py`.
 
-\<write here on simulated rather than observed repair outcomes, assumed repair success, known functional status as an input, probability calibration, and geographic evaluation beyond a single region>
+## Limitations and next steps
 
-\<write here on straight-line distance versus practical access, pump capacity and reliability, seasonality and water quality, population and pump-record reference-year differences, and boundary or coordinate uncertainty>
+The simulation assumes a known working-well inventory and successful repairs of selected nonfunctional pumps. Straight-line distance is an access proxy, not measured walking time or a validated 30-minute round trip. Pump capacity, queues, water quality, and seasonal reliability are not modeled; the population raster and pump records also represent different years.
 
-\<write here on the current reservation of repair cost plus service-call fee for every selected pump, its distinction from charging repair costs only on confirmed failures, and the absence of routing or sequential budget reallocation>
+The dashboard reserves repair cost plus service-call fee for every selected pump, including false positives. Random comparison uses one fixed seed. Before operational deployment, validate outcomes and costs in the field, improve travel-time and inventory coverage, and evaluate more regions and repeated random baselines.
+## AI assistance disclosure
 
-### Path to operational use
+Codex and ChatGPT were used throughout this project to assist with code refactoring, data visualizations, and translating notebook logic into reusable, object-oriented components. They also supported code generation for tests, geographic data wrangling with geoBoundaries and WorldPop, and the Streamlit dashboard.
 
-\<write here on the client's next validation step, field verification, a complete current pump inventory, realistic travel-time modeling, repair outcomes and costs, repeated random comparisons, and expansion to more regions>
-
-\<write here on the decision this proof of concept supports today and the evidence required before using its estimates as operational commitments>
+Decisions concerning data analysis, feature engineering, modeling, and KPI design and interpretation remained my responsibility. AI assistance supported implementation rather than determining the analytical approach. All generated code was reviewed and adjusted before inclusion.

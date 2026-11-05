@@ -146,6 +146,65 @@ def comparison_chart(random_value, strategy_value, baseline_value=None):
     return (bars + labels).properties(height=210).configure_view(strokeWidth=0)
 
 
+def build_repair_plan(selected, identifiers):
+    repair_plan = selected.sort_values("selection_rank").merge(
+        identifiers, on="id", how="left", validate="one_to_one",
+    )
+    repair_plan = repair_plan[[
+        "selection_rank", "id", "wpt_name", "region", "latitude", "longitude",
+        "lga", "ward", "subvillage",
+        "scheme_name", "waterpoint_type", "source", "expected_population_gain",
+    ]].rename(columns={"expected_population_gain": "Expected water access increase"})
+    return repair_plan
+
+
+def prepare_map_points(points, strategy_view, color_mode, threshold_km,
+                       show_new_access, show_existing_access, show_no_access):
+    points = points.copy()
+    distance_column = {
+        "No repair": "distance_to_nearest_functional_well_without_intervention_m",
+        "Random selection": "distance_to_nearest_functional_well_with_random_interventions_m",
+        "Priority selection": "distance_to_nearest_functional_well_m",
+    }[strategy_view]
+    points["distance_m"] = points[distance_column]
+    points["distance_km"] = (points["distance_m"] / 1000).round(2)
+    threshold_m = threshold_km * 1000
+    distance_scale = np.clip((points["distance_m"].fillna(np.inf).to_numpy() - threshold_m) / threshold_m, 0, 1)
+    if color_mode == "Threshold":
+        distance_scale = points["distance_m"].fillna(np.inf).gt(threshold_m).to_numpy(dtype=float)
+    palette = np.array([[78, 112, 139], [255, 0, 0]])
+    rgb = np.column_stack([
+        np.interp(distance_scale, [0, 1], palette[:, channel])
+        for channel in range(3)
+    ]).round().astype(int)
+    population_alpha = (np.clip(points["population"].to_numpy() / 100, 0, 1) * 255).round().astype(int)
+    new_access = (
+        points["distance_to_nearest_functional_well_without_intervention_m"].gt(threshold_m)
+        & points["distance_m"].le(threshold_m)
+    ).to_numpy()
+    existing_access = points["distance_to_nearest_functional_well_without_intervention_m"].le(threshold_m).to_numpy()
+    no_access = points["distance_m"].gt(threshold_m).to_numpy()
+    points["color"] = np.column_stack([rgb, population_alpha]).tolist()
+    visible = ((show_new_access & new_access)
+               | (show_existing_access & existing_access)
+               | (show_no_access & no_access))
+    return points.loc[visible].copy()
+
+
+def build_financial_table(selected_count, random_count, cost_per_repair,
+                          service_call_fee, strategy_gain, random_gain):
+    cost_per_check = cost_per_repair + service_call_fee
+    total_cost = selected_count * cost_per_check
+    random_cost = random_count * cost_per_check
+    costs = pd.DataFrame({
+        "Random": [random_cost, cost_per_repair, service_call_fee,
+                   random_cost * 1000 / random_gain if random_gain > 0 else np.nan],
+        "Our approach": [total_cost, cost_per_repair, service_call_fee,
+                         total_cost * 1000 / strategy_gain if strategy_gain > 0 else np.nan],
+    }, index=["Total TZS spent", "Repair cost (TZS)", "Service call fee (TZS)", "**TZS per 1,000 people gaining access**"])
+    return costs
+
+
 def workspace():
     regions, geometries = load_map_regions()
     st.session_state.setdefault("region", "Dar es Salaam" if "Dar es Salaam" in regions else regions[0])
@@ -224,14 +283,7 @@ def workspace():
     access, selected, random_selected = load_population_points(
         region, st.session_state["repairs_input"], threshold_km * 1000,
     )
-    repair_plan = selected.sort_values("selection_rank").merge(
-        load_well_identifiers(), on="id", how="left", validate="one_to_one",
-    )
-    repair_plan = repair_plan[[
-        "selection_rank", "id", "wpt_name", "region", "latitude", "longitude",
-        "lga", "ward", "subvillage",
-        "scheme_name", "waterpoint_type", "source", "expected_population_gain",
-    ]].rename(columns={"expected_population_gain": "Expected water access increase"})
+    repair_plan = build_repair_plan(selected, load_well_identifiers())
     repair_plan_download.download_button(
         "Get repair plan", data=repair_plan.to_csv(index=False).encode("utf-8-sig"),
         file_name=f"repair_plan_{region.lower().replace(' ', '_')}.csv",
@@ -275,34 +327,10 @@ def workspace():
                         st.caption("Random sampling of pumps using the same repair budget (seed 42).")
                     else:
                         st.caption("Pumps prioritized for expected access gains across the full region.")
-                distance_column = {
-                    "No repair": "distance_to_nearest_functional_well_without_intervention_m",
-                    "Random selection": "distance_to_nearest_functional_well_with_random_interventions_m",
-                    "Priority selection": "distance_to_nearest_functional_well_m",
-                }[strategy_view]
-                points["distance_m"] = points[distance_column]
-                points["distance_km"] = (points["distance_m"] / 1000).round(2)
-                threshold_m = threshold_km * 1000
-                distance_scale = np.clip((points["distance_m"].fillna(np.inf).to_numpy() - threshold_m) / threshold_m, 0, 1)
-                if color_mode == "Threshold":
-                    distance_scale = points["distance_m"].fillna(np.inf).gt(threshold_m).to_numpy(dtype=float)
-                palette = np.array([[78, 112, 139], [255, 0, 0]])
-                rgb = np.column_stack([
-                    np.interp(distance_scale, [0, 1], palette[:, channel])
-                    for channel in range(3)
-                ]).round().astype(int)
-                population_alpha = (np.clip(points["population"].to_numpy() / 100, 0, 1) * 255).round().astype(int)
-                new_access = (
-                    points["distance_to_nearest_functional_well_without_intervention_m"].gt(threshold_m)
-                    & points["distance_m"].le(threshold_m)
-                ).to_numpy()
-                existing_access = points["distance_to_nearest_functional_well_without_intervention_m"].le(threshold_m).to_numpy()
-                no_access = points["distance_m"].gt(threshold_m).to_numpy()
-                points["color"] = np.column_stack([rgb, population_alpha]).tolist()
-                visible = ((show_new_access & new_access)
-                           | (show_existing_access & existing_access)
-                           | (show_no_access & no_access))
-                points = points.loc[visible].copy()
+                points = prepare_map_points(
+                    points, strategy_view, color_mode, threshold_km,
+                    show_new_access, show_existing_access, show_no_access,
+                )
                 population_layer = pdk.Layer(
                     "PolygonLayer", id="population-distance", data=points,
                     get_polygon="cell_polygon", get_fill_color="color", opacity=1,
@@ -349,14 +377,10 @@ def workspace():
                     random_gain = metrics["population_gaining_access_random"]
                     strategy_gain = metrics["population_gaining_access"]
                     st.markdown("**Financials**")
-                    total_cost = len(selected) * cost_per_check
-                    random_cost = len(random_selected) * cost_per_check
-                    costs = pd.DataFrame({
-                        "Random": [random_cost, cost_per_repair, service_call_fee,
-                                   random_cost * 1000 / random_gain if random_gain > 0 else np.nan],
-                        "Our approach": [total_cost, cost_per_repair, service_call_fee,
-                                         total_cost * 1000 / strategy_gain if strategy_gain > 0 else np.nan],
-                    }, index=["Total TZS spent", "Repair cost (TZS)", "Service call fee (TZS)", "**TZS per 1,000 people gaining access**"])
+                    costs = build_financial_table(
+                        len(selected), len(random_selected), cost_per_repair,
+                        service_call_fee, strategy_gain, random_gain,
+                    )
                     st.table(costs.style.format("{:,.0f}", na_rep="—"))
                     st.caption("Repair cost plus service call fee is reserved for every selected pump, including checks without a successful repair. Random uses seed 42.")
                     st.divider()

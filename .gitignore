@@ -48,6 +48,10 @@ htmlcov/
 !/data/raw/.gitkeep
 /data/processed/*
 !/data/processed/.gitkeep
+!/data/processed/dashboard/
+
+# Inputs shipped with the ready-to-run Streamlit dashboard.
+!/tza_pop_2026_CN_1km_R2025A_UA_v1.tif
 
 # Trained models and serialized caches
 /models/*

@@ -42,7 +42,9 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-Download the inputs from the sources above and place them at these paths. Rename the competition downloads to match the expected filenames. Input data and generated caches are excluded from version control.
+The processed dashboard datasets and WorldPop raster are included in this repository, so the dashboard can run without downloading data or training models. The other raw inputs and intermediate caches are excluded from version control.
+
+To rebuild the datasets or reproduce the analysis, download the inputs from the sources above and place them at these paths. Rename the competition downloads to match the expected filenames.
 
 | Input | Local path |
 | --- | --- |
@@ -53,11 +55,18 @@ Download the inputs from the sources above and place them at these paths. Rename
 
 ### Prepare and launch the dashboard
 
-Build a cache for one region, then launch the app:
+Launch the app using the included datasets:
+
+```bash
+python -m streamlit run src/dashboard/app.py
+```
+
+For Streamlit Community Cloud, select this repository and branch, set the entrypoint to `src/dashboard/app.py`, and use Python 3.12. The root `requirements.txt` installs the project and its dependencies. No secrets or data-download configuration are required.
+
+To rebuild a cache for one region:
 
 ```bash
 python -m dashboard.cache_data --regions "Dar es Salaam"
-python -m streamlit run src/dashboard/app.py
 ```
 
 Omit `--regions` to prepare all regions. Existing CSV caches are reused; add `--refresh` after changing data or model settings. Generated files are saved under `data/processed/dashboard`. The first run includes training and geographic processing and takes longer than subsequent use.
